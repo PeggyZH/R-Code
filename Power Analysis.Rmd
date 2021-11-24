@@ -1,0 +1,457 @@
+---
+title: "Power Analysis"
+author: "Peiran Zhang"
+date: "11/24/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+library(car)
+library(RNOmni)
+library(VGAM)
+library(GeneralizedHyperbolic)
+library(lsr)
+library(lmPerm)
+library(pwr)
+library(coin)
+library(Deducer)
+library(exactRankTests)
+library(perm)
+
+INT_function = function(x, n, k) { 
+  output = 0
+  ranks = rank(x)
+  for (i in 1:n) {
+    output[i] = probitlink((ranks[i] - k)/(n + 1 - 2*k))
+  }
+  return(output)
+}
+```
+
+## Power Analysis (Reproducing Table 4 in Article "Rank-Based Inverse Normal Transformations are Increasingly Used, But are They Merited?")
+
+## Normal Distribution
+## T Test
+```{r}
+simulation = 1000
+n = 5
+k = 3/8
+
+p_original = vector(length = simulation)
+power_original_005 = NA
+power_original_001 = NA
+power_original_0001 = NA
+p_transformed = vector(length = simulation)
+power_transformed_005 = NA
+power_transformed_001 = NA
+power_transformed_0001 = NA
+
+for (i in 1:simulation) {
+  x = rnorm(n, mean = 0, sd = 1)
+  y = rnorm(n, mean = 0.5, sd = 1)
+  p_original[i] = t.test(x, y)$p.value
+  if (p_original[i] < 0.05) {
+    power_original_005[i] = 1
+  }
+  if (p_original[i] < 0.01) {
+    power_original_001[i] = 1
+  }
+  if (p_original[i] < 0.001) {
+    power_original_0001[i] = 1
+  }
+  total = c(x, y)
+  transformed = INT_function(total, 2*n, k)
+  splited = split(transformed, ceiling(seq_along(transformed) / n))
+  newx = splited$`1`
+  newy = splited$`2`
+  p_transformed[i] = t.test(newx, newy)$p.value
+  if (p_transformed[i] < 0.05) {
+    power_transformed_005[i] = 1
+  }
+  if (p_transformed[i] < 0.01) {
+    power_transformed_001[i] = 1
+  }
+  if (p_transformed[i] < 0.001) {
+    power_transformed_0001[i] = 1
+  }
+}
+table(power_original_005)
+table(power_original_001)
+table(power_original_0001)
+table(power_transformed_005)
+table(power_transformed_001)
+table(power_transformed_0001)
+```
+
+## Permutation Test
+```{r}
+simulation = 1000
+n = 5
+k = 3/8
+
+p_original = vector(length = simulation)
+power_original_005 = NA
+power_original_001 = NA
+power_original_0001 = NA
+p_transformed = vector(length = simulation)
+power_transformed_005 = NA
+power_transformed_001 = NA
+power_transformed_0001 = NA
+
+for (i in 1:simulation) {
+  x = rnorm(n, mean = 0, sd = 1)
+  y = rnorm(n, mean = 0.5, sd = 1)
+  p_original[i] = permTS(x, y)$p.value
+  if (p_original[i] < 0.05) {
+    power_original_005[i] = 1
+  }
+  if (p_original[i] < 0.01) {
+    power_original_001[i] = 1
+  }
+  if (p_original[i] < 0.001) {
+    power_original_0001[i] = 1
+  }
+  total = c(x, y)
+  transformed = INT_function(total, 2*n, k)
+  splited = split(transformed, ceiling(seq_along(transformed) / n))
+  newx = splited$`1`
+  newy = splited$`2`
+  p_transformed[i] = permTS(newx, newy)$p.value
+  if (p_transformed[i] < 0.05) {
+    power_transformed_005[i] = 1
+  }
+  if (p_transformed[i] < 0.01) {
+    power_transformed_001[i] = 1
+  }
+  if (p_transformed[i] < 0.001) {
+    power_transformed_0001[i] = 1
+  }
+}
+table(power_original_005)
+table(power_original_001)
+table(power_original_0001)
+table(power_transformed_005)
+table(power_transformed_001)
+table(power_transformed_0001)
+```
+
+## LaPlace Distribution
+## T Test
+```{r}
+simulation = 1000
+n = 5
+k = 3/8
+
+p_original = vector(length = simulation)
+power_original_005 = NA
+power_original_001 = NA
+power_original_0001 = NA
+p_transformed = vector(length = simulation)
+power_transformed_005 = NA
+power_transformed_001 = NA
+power_transformed_0001 = NA
+
+for (i in 1:simulation) {
+  x = rlaplace(n, location = 0, scale = sqrt(0.5))
+  y = rlaplace(n, location = 0.5, scale = sqrt(0.5))
+  p_original[i] = t.test(x, y)$p.value
+  if (p_original[i] < 0.05) {
+    power_original_005[i] = 1
+  }
+  if (p_original[i] < 0.01) {
+    power_original_001[i] = 1
+  }
+  if (p_original[i] < 0.001) {
+    power_original_0001[i] = 1
+  }
+  total = c(x, y)
+  transformed = INT_function(total, 2*n, k)
+  splited = split(transformed, ceiling(seq_along(transformed) / n))
+  newx = splited$`1`
+  newy = splited$`2`
+  p_transformed[i] = t.test(newx, newy)$p.value
+  if (p_transformed[i] < 0.05) {
+    power_transformed_005[i] = 1
+  }
+  if (p_transformed[i] < 0.01) {
+    power_transformed_001[i] = 1
+  }
+  if (p_transformed[i] < 0.001) {
+    power_transformed_0001[i] = 1
+  }
+}
+table(power_original_005)
+table(power_original_001)
+table(power_original_0001)
+table(power_transformed_005)
+table(power_transformed_001)
+table(power_transformed_0001)
+```
+
+## Permutation Test
+```{r}
+simulation = 1000
+n = 5
+k = 3/8
+
+p_original = vector(length = simulation)
+power_original_005 = NA
+power_original_001 = NA
+power_original_0001 = NA
+p_transformed = vector(length = simulation)
+power_transformed_005 = NA
+power_transformed_001 = NA
+power_transformed_0001 = NA
+
+for (i in 1:simulation) {
+  x = rlaplace(n, location = 0, scale = sqrt(0.5))
+  y = rlaplace(n, location = 0.5, scale = sqrt(0.5))
+  p_original[i] = permTS(x, y)$p.value
+  if (p_original[i] < 0.05) {
+    power_original_005[i] = 1
+  }
+  if (p_original[i] < 0.01) {
+    power_original_001[i] = 1
+  }
+  if (p_original[i] < 0.001) {
+    power_original_0001[i] = 1
+  }
+  total = c(x, y)
+  transformed = INT_function(total, 2*n, k)
+  splited = split(transformed, ceiling(seq_along(transformed) / n))
+  newx = splited$`1`
+  newy = splited$`2`
+  p_transformed[i] = permTS(newx, newy)$p.value
+  if (p_transformed[i] < 0.05) {
+    power_transformed_005[i] = 1
+  }
+  if (p_transformed[i] < 0.01) {
+    power_transformed_001[i] = 1
+  }
+  if (p_transformed[i] < 0.001) {
+    power_transformed_0001[i] = 1
+  }
+}
+table(power_original_005)
+table(power_original_001)
+table(power_original_0001)
+table(power_transformed_005)
+table(power_transformed_001)
+table(power_transformed_0001)
+```
+
+## Chi-square Distribution
+## T Test
+```{r}
+simulation = 1000
+n = 5
+k = 3/8
+
+p_original = vector(length = simulation)
+power_original_005 = NA
+power_original_001 = NA
+power_original_0001 = NA
+p_transformed = vector(length = simulation)
+power_transformed_005 = NA
+power_transformed_001 = NA
+power_transformed_0001 = NA
+
+for (i in 1:simulation) {
+  x = rchisq(n, df = 1)
+  y = rchisq(n, df = 1) + 0.5
+  p_original[i] = t.test(x, y)$p.value
+  if (p_original[i] < 0.05) {
+    power_original_005[i] = 1
+  }
+  if (p_original[i] < 0.01) {
+    power_original_001[i] = 1
+  }
+  if (p_original[i] < 0.001) {
+    power_original_0001[i] = 1
+  }
+  total = c(x, y)
+  transformed = INT_function(total, 2*n, k)
+  splited = split(transformed, ceiling(seq_along(transformed) / n))
+  newx = splited$`1`
+  newy = splited$`2`
+  p_transformed[i] = t.test(newx, newy)$p.value
+  if (p_transformed[i] < 0.05) {
+    power_transformed_005[i] = 1
+  }
+  if (p_transformed[i] < 0.01) {
+    power_transformed_001[i] = 1
+  }
+  if (p_transformed[i] < 0.001) {
+    power_transformed_0001[i] = 1
+  }
+}
+table(power_original_005)
+table(power_original_001)
+table(power_original_0001)
+table(power_transformed_005)
+table(power_transformed_001)
+table(power_transformed_0001)
+```
+
+## Permutation Test
+```{r}
+simulation = 1000
+n = 5
+k = 3/8
+
+p_original = vector(length = simulation)
+power_original_005 = NA
+power_original_001 = NA
+power_original_0001 = NA
+p_transformed = vector(length = simulation)
+power_transformed_005 = NA
+power_transformed_001 = NA
+power_transformed_0001 = NA
+
+for (i in 1:simulation) {
+  x = rchisq(n, df = 1)
+  y = rchisq(n, df = 1) + 0.5
+  p_original[i] = permTS(x, y, B = 200)$p.value
+  if (p_original[i] < 0.05) {
+    power_original_005[i] = 1
+  }
+  if (p_original[i] < 0.01) {
+    power_original_001[i] = 1
+  }
+  if (p_original[i] < 0.001) {
+    power_original_0001[i] = 1
+  }
+  total = c(x, y)
+  transformed = INT_function(total, 2*n, k)
+  splited = split(transformed, ceiling(seq_along(transformed) / n))
+  newx = splited$`1`
+  newy = splited$`2`
+  p_transformed[i] = permTS(newx, newy, B = 200)$p.value
+  if (p_transformed[i] < 0.05) {
+    power_transformed_005[i] = 1
+  }
+  if (p_transformed[i] < 0.01) {
+    power_transformed_001[i] = 1
+  }
+  if (p_transformed[i] < 0.001) {
+    power_transformed_0001[i] = 1
+  }
+}
+table(power_original_005)
+table(power_original_001)
+table(power_original_0001)
+table(power_transformed_005)
+table(power_transformed_001)
+table(power_transformed_0001)
+```
+
+## Weibull Distribution
+## T Test
+```{r}
+simulation = 1000
+n = 5
+k = 3/8
+
+p_original = vector(length = simulation)
+power_original_005 = NA
+power_original_001 = NA
+power_original_0001 = NA
+p_transformed = vector(length = simulation)
+power_transformed_005 = NA
+power_transformed_001 = NA
+power_transformed_0001 = NA
+
+for (i in 1:simulation) {
+  x = rweibull(n, shape = 1, scale = 0.5)
+  y = rweibull(n, shape = 1, scale = 0.5) + 0.5
+  p_original[i] = t.test(x, y)$p.value
+  if (p_original[i] < 0.05) {
+    power_original_005[i] = 1
+  }
+  if (p_original[i] < 0.01) {
+    power_original_001[i] = 1
+  }
+  if (p_original[i] < 0.001) {
+    power_original_0001[i] = 1
+  }
+  total = c(x, y)
+  transformed = INT_function(total, 2*n, k)
+  splited = split(transformed, ceiling(seq_along(transformed) / n))
+  newx = splited$`1`
+  newy = splited$`2`
+  p_transformed[i] = t.test(newx, newy)$p.value
+  if (p_transformed[i] < 0.05) {
+    power_transformed_005[i] = 1
+  }
+  if (p_transformed[i] < 0.01) {
+    power_transformed_001[i] = 1
+  }
+  if (p_transformed[i] < 0.001) {
+    power_transformed_0001[i] = 1
+  }
+}
+table(power_original_005)
+table(power_original_001)
+table(power_original_0001)
+table(power_transformed_005)
+table(power_transformed_001)
+table(power_transformed_0001)
+```
+
+## Permutation Test
+```{r}
+simulation = 1000
+n = 5
+k = 3/8
+
+p_original = vector(length = simulation)
+power_original_005 = NA
+power_original_001 = NA
+power_original_0001 = NA
+p_transformed = vector(length = simulation)
+power_transformed_005 = NA
+power_transformed_001 = NA
+power_transformed_0001 = NA
+
+for (i in 1:simulation) {
+  x = rweibull(n, shape = 1, scale = 0.5)
+  y = rweibull(n, shape = 1, scale = 0.5) + 0.5
+  p_original[i] = permTS(x, y, B = 200)$p.value
+  if (p_original[i] < 0.05) {
+    power_original_005[i] = 1
+  }
+  if (p_original[i] < 0.01) {
+    power_original_001[i] = 1
+  }
+  if (p_original[i] < 0.001) {
+    power_original_0001[i] = 1
+  }
+  total = c(x, y)
+  transformed = INT_function(total, 2*n, k)
+  splited = split(transformed, ceiling(seq_along(transformed) / n))
+  newx = splited$`1`
+  newy = splited$`2`
+  p_transformed[i] = permTS(newx, newy, B = 200)$p.value
+  if (p_transformed[i] < 0.05) {
+    power_transformed_005[i] = 1
+  }
+  if (p_transformed[i] < 0.01) {
+    power_transformed_001[i] = 1
+  }
+  if (p_transformed[i] < 0.001) {
+    power_transformed_0001[i] = 1
+  }
+}
+table(power_original_005)
+table(power_original_001)
+table(power_original_0001)
+table(power_transformed_005)
+table(power_transformed_001)
+table(power_transformed_0001)
+```
