@@ -1,0 +1,515 @@
+---
+title: "Distribution of P-values and Type I Error Rate"
+author: "Peiran Zhang"
+date: "11/24/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+```{r}
+library(car)
+library(RNOmni)
+library(VGAM)
+library(GeneralizedHyperbolic)
+library(lsr)
+library(lmPerm)
+library(pwr)
+library(coin)
+library(Deducer)
+
+INT_function = function(x, n, k) { 
+  output = 0
+  ranks = rank(x)
+  for (i in 1:n) {
+    output[i] = probitlink((ranks[i] - k)/(n + 1 - 2*k))
+  }
+  return(output)
+}
+```
+
+
+## Two Sample Test
+
+## Normal Distribution
+```{r}
+# Use the given matrix to fit the data generated from standard normal distribution. Construct 1000 simulations. Use 0.05 as significance level and test for sample size 50 and 100 respectively. Return the Type I error rate for both original data and transformed data and display the histograms of the distributions of p-values.
+
+normfunc = function(simulation, n, k, siglevel) { 
+  # later functions for all other distributions are constructed in the same way as this one
+  X1 = c(rep(1, n/2), rep(0, n/2))
+  X2 = c(rep(0, n/2), rep(1, n/2))
+  A = matrix(c(X1, X2), nrow = n, ncol=2) # construct the matrix A = [0, 0, 0 ...... 1, 1, 1]
+  p_original = vector(length = simulation) # store the p values for original data
+  error_original = NA # mark the position where type I error occurs in original data
+  p_transformed = vector(length = simulation) # store the p values for transformed data
+  error_transformed = NA # mark the position where type I error occurs in transformed data
+  
+  plot(density(rnorm(50, 0, 1)), main = "Density Curve") # plot the density curve for reference
+  for(i in 1 : simulation){ # number of simulations
+    original = rnorm(n, 0, 1) # generate data from the desired distribution
+    fit_original = lm(formula = original ~ A) # perform the two sample t test
+    p_original[i] = summary(fit_original)$coefficients[2,4] # collect the p values
+    if (p_original[i] < siglevel) {
+      error_original[i] = 1 # mark the errors in order to calculate the type I error rate
+    }
+    transformed = INT_function(original, n, k) # apply the inverse normal transformation
+    fit_transformed = lm(formula = transformed ~ A) # perform the two sample t test again using the transformed data
+    p_transformed[i] = summary(fit_transformed)$coefficients[2,4] # collect the p values
+    if (p_transformed[i] < siglevel) {
+       error_transformed[i] = 1 # mark the errors in testing the transformed data
+    }
+  }
+  print(data.frame("TypeI Error Rate Original" = (length(which(error_original == 1)))/simulation, "TypeI Error Rate Transformed" = (length(which(error_transformed == 1)))/simulation)) # form the table with the type I error rates of the two tests using original and transformed data
+  hist(p_original, main = "Distribution of p-values for Original Data")
+  hist(p_transformed, main = "Distribution of p-values for Transformed Data")
+}
+
+normfunc(1000, 50, 0.4, 0.05)
+```
+```{r}
+normfunc(1000, 100, 0.4, 0.05)
+```
+
+## Exponential Distribution
+```{r}
+# Use the given matrix to fit the data generated from exponential distribution with rate = 1. Construct 1000 simulations. Use 0.05 as significance level and test for sample size 50 and 100 respectively. Return the Type I error rate for both original data and transformed data and display the histograms of the distributions of p-values.
+
+expfunc = function(simulation, n, k, siglevel) {
+  X1 = c(rep(1, n/2), rep(0, n/2))
+  X2 = c(rep(0, n/2), rep(1, n/2))
+  A = matrix(c(X1, X2), nrow = n, ncol=2) 
+  p_original = vector(length = simulation)
+  error_original = NA
+  p_transformed = vector(length = simulation)
+  error_transformed = NA
+  
+  plot(density(rexp(n)), main = "Density Curve")
+  for(i in 1 : simulation){
+    original = rexp(n)
+    fit_original = lm(formula = original ~ A) 
+    p_original[i] = summary(fit_original)$coefficients[2,4]
+    if (p_original[i] < siglevel) {
+      error_original[i] = 1 
+    }
+    transformed = INT_function(original, n, k) 
+    fit_transformed = lm(formula = transformed ~ A)
+    p_transformed[i] = summary(fit_transformed)$coefficients[2,4]
+    if (p_transformed[i] < siglevel) {
+       error_transformed[i] = 1
+    }
+  }
+  print(data.frame("TypeI Error Rate Original" = (length(which(error_original == 1)))/simulation, "TypeI Error Rate Transformed" = (length(which(error_transformed == 1)))/simulation))
+  hist(p_original, main = "Distribution of p-values for Original Data")
+  hist(p_transformed, main = "Distribution of p-values for Transformed Data")
+}
+
+expfunc(1000, 50, 0.4, 0.05)
+```
+```{r}
+expfunc(1000, 100, 0.4, 0.05)
+```
+
+## Chi-square Distribution
+```{r}
+# Use the given matrix to fit the data generated from Chi-square distribution with df = 1. Construct 1000 simulations. Use 0.05 as significance level and test for sample size 50 and 100 respectively. Return the Type I error rate for both original data and transformed data and display the histograms of the distributions of p-values.
+
+chisqfunc = function(simulation, n, k, siglevel) {
+  X1 = c(rep(1, n/2), rep(0, n/2))
+  X2 = c(rep(0, n/2), rep(1, n/2))
+  A = matrix(c(X1, X2), nrow = n, ncol=2)
+  p_original = vector(length = simulation)
+  error_original = NA
+  p_transformed = vector(length = simulation)
+  error_transformed = NA
+  
+  plot(density(rchisq(n, df = 1)), main = "Density Curve")
+  for(i in 1 : simulation){
+    original = rchisq(n, df = 1)
+    fit_original = lm(formula = original ~ A) 
+    p_original[i] = summary(fit_original)$coefficients[2,4]
+    if (p_original[i] < siglevel) {
+      error_original[i] = 1 
+    }
+    transformed = INT_function(original, n, k) 
+    fit_transformed = lm(formula = transformed ~ A)
+    p_transformed[i] = summary(fit_transformed)$coefficients[2,4]
+    if (p_transformed[i] < siglevel) {
+       error_transformed[i] = 1
+    }
+  }
+  print(data.frame("TypeI Error Rate Original" = (length(which(error_original == 1)))/simulation, "TypeI Error Rate Transformed" = (length(which(error_transformed == 1)))/simulation))
+  hist(p_original, main = "Distribution of p-values for Original Data")
+  hist(p_transformed, main = "Distribution of p-values for Transformed Data")
+}
+
+chisqfunc(1000, 50, 0.4, 0.05)
+```
+```{r}
+chisqfunc(1000, 100, 0.4, 0.05)
+```
+
+
+
+
+## Other Heavy Tailed Distributions
+
+## LaPlace Distribution
+### Use the given matrix to fit the data generated from LaPlace distribution with location = 0 and scale = 1. Use 0.05, 0.01, and 0.001 as significance levels and test for sample size 20, 50, and 100 respectively.
+```{r}
+laplacefunc = function(simulation, n, k, siglevel) {
+  X1 = c(rep(1, n/2), rep(0, n/2))
+  X2 = c(rep(0, n/2), rep(1, n/2))
+  A = matrix(c(X1, X2), nrow = n, ncol=2)
+  p_original = vector(length = simulation)
+  error_original = NA
+  p_transformed = vector(length = simulation)
+  error_transformed = NA
+  
+  plot(density(rlaplace(n, location = 0, scale = 1)), main = "Density Curve")
+  for(i in 1 : simulation){
+    original = rlaplace(n, location = 0, scale = 1)
+    fit_original = lm(formula = original ~ A) 
+    p_original[i] = summary(fit_original)$coefficients[2,4]
+    if (p_original[i] < siglevel) {
+      error_original[i] = 1 
+    }
+    transformed = INT_function(original, n, k) 
+    fit_transformed = lm(formula = transformed ~ A)
+    p_transformed[i] = summary(fit_transformed)$coefficients[2,4]
+    if (p_transformed[i] < siglevel) {
+       error_transformed[i] = 1
+    }
+  }
+  print(data.frame("TypeI Error Rate Original" = (length(which(error_original == 1)))/simulation, "TypeI Error Rate Transformed" = (length(which(error_transformed == 1)))/simulation))
+  hist(p_original, main = "Distribution of p-values for Original Data")
+  hist(p_transformed, main = "Distribution of p-values for Transformed Data")
+}
+laplacefunc(1000, 20, 0.4, 0.05)
+```
+```{r}
+laplacefunc(1000, 20, 0.4, 0.01)
+```
+```{r}
+laplacefunc(1000, 20, 0.4, 0.001)
+```
+```{r}
+laplacefunc(1000, 50, 0.4, 0.05)
+```
+```{r}
+laplacefunc(1000, 50, 0.4, 0.01)
+```
+```{r}
+laplacefunc(1000, 50, 0.4, 0.001)
+```
+```{r}
+laplacefunc(1000, 100, 0.4, 0.05)
+```
+```{r}
+laplacefunc(1000, 100, 0.4, 0.01)
+```
+```{r}
+laplacefunc(1000, 100, 0.4, 0.001)
+```
+
+## Weibull Distribution
+### Use the given matrix to fit the data generated from Weibull distribution with shape = 1 and scale = 1. Use 0.05, 0.01, and 0.001 as significance levels and test for sample size 20, 50, and 100 respectively.
+```{r}
+weibullfunc = function(simulation, n, k, siglevel) {
+  X1 = c(rep(1, n/2), rep(0, n/2))
+  X2 = c(rep(0, n/2), rep(1, n/2))
+  A = matrix(c(X1, X2), nrow = n, ncol=2)
+  p_original = vector(length = simulation)
+  error_original = NA
+  p_transformed = vector(length = simulation)
+  error_transformed = NA
+  
+  plot(density(rweibull(n, shape = 1, scale = 1)), main = "Density Curve")
+  for(i in 1 : simulation){
+    original = rweibull(n, shape = 1, scale = 1)
+    fit_original = lm(formula = original ~ A) 
+    p_original[i] = summary(fit_original)$coefficients[2,4]
+    if (p_original[i] < siglevel) {
+      error_original[i] = 1 
+    }
+    transformed = INT_function(original, n, k) 
+    fit_transformed = lm(formula = transformed ~ A)
+    p_transformed[i] = summary(fit_transformed)$coefficients[2,4]
+    if (p_transformed[i] < siglevel) {
+       error_transformed[i] = 1
+    }
+  }
+  print(data.frame("TypeI Error Rate Original" = (length(which(error_original == 1)))/simulation, "TypeI Error Rate Transformed" = (length(which(error_transformed == 1)))/simulation))
+  hist(p_original, main = "Distribution of p-values for Original Data")
+  hist(p_transformed, main = "Distribution of p-values for Transformed Data")
+}
+
+weibullfunc(1000, 20, 0.4, 0.05)
+```
+```{r}
+weibullfunc(1000, 20, 0.4, 0.01)
+```
+```{r}
+weibullfunc(1000, 20, 0.4, 0.001)
+```
+```{r}
+weibullfunc(1000, 50, 0.4, 0.05)
+```
+```{r}
+weibullfunc(1000, 50, 0.4, 0.01)
+```
+```{r}
+weibullfunc(1000, 50, 0.4, 0.001)
+```
+```{r}
+weibullfunc(1000, 100, 0.4, 0.05)
+```
+```{r}
+weibullfunc(1000, 100, 0.4, 0.01)
+```
+```{r}
+weibullfunc(1000, 100, 0.4, 0.001)
+```
+
+## Rayleigh Distribution
+### Use the given matrix to fit the data generated from Rayleigh distribution with scale = 1. Use 0.05, 0.01, and 0.001 as significance levels and test for sample size 20, 50, and 100 respectively.
+```{r}
+rayleighfunc = function(simulation, n, k, siglevel) {
+  X1 = c(rep(1, n/2), rep(0, n/2))
+  X2 = c(rep(0, n/2), rep(1, n/2))
+  A = matrix(c(X1, X2), nrow = n, ncol=2)
+  p_original = vector(length = simulation)
+  error_original = NA
+  p_transformed = vector(length = simulation)
+  error_transformed = NA
+  
+  plot(density(rrayleigh(n, scale = 1)), main = "Density Curve")
+  for(i in 1 : simulation){
+    original = rrayleigh(n, scale = 1)
+    fit_original = lm(formula = original ~ A) 
+    p_original[i] = summary(fit_original)$coefficients[2,4]
+    if (p_original[i] < siglevel) {
+      error_original[i] = 1 
+    }
+    transformed = INT_function(original, n, k) 
+    fit_transformed = lm(formula = transformed ~ A)
+    p_transformed[i] = summary(fit_transformed)$coefficients[2,4]
+    if (p_transformed[i] < siglevel) {
+       error_transformed[i] = 1
+    }
+  }
+  print(data.frame("TypeI Error Rate Original" = (length(which(error_original == 1)))/simulation, "TypeI Error Rate Transformed" = (length(which(error_transformed == 1)))/simulation))
+  hist(p_original, main = "Distribution of p-values for Original Data with")
+  hist(p_transformed, main = "Distribution of p-values for Transformed Data")
+}
+rayleighfunc(1000, 20, 0.4, 0.05)
+```
+```{r}
+rayleighfunc(1000, 20, 0.4, 0.01)
+```
+```{r}
+rayleighfunc(1000, 20, 0.4, 0.001)
+```
+```{r}
+rayleighfunc(1000, 50, 0.4, 0.05)
+```
+```{r}
+rayleighfunc(1000, 50, 0.4, 0.01)
+```
+```{r}
+rayleighfunc(1000, 50, 0.4, 0.001)
+```
+```{r}
+rayleighfunc(1000, 100, 0.4, 0.05)
+```
+```{r}
+rayleighfunc(1000, 100, 0.4, 0.01)
+```
+```{r}
+rayleighfunc(1000, 100, 0.4, 0.001)
+```
+
+
+
+
+## More Heavy Tailed Distributions
+
+## Cauchy Distribution
+### Use the given matrix to fit the data generated from Cauchy distribution with location = 0 and scale = 1. Use 0.05, 0.01, and 0.001 as significance levels and test for sample size 20, 50, and 100 respectively. Show a break in uniformity in the distribution of p values.
+```{r}
+cauchyfunc = function(simulation, n, k, siglevel) {
+  X1 = c(rep(1, n/2), rep(0, n/2))
+  X2 = c(rep(0, n/2), rep(1, n/2))
+  A = matrix(c(X1, X2), nrow = n, ncol=2)
+  p_original = vector(length = simulation)
+  error_original = NA
+  p_transformed = vector(length = simulation)
+  error_transformed = NA
+  
+  plot(density(rcauchy(n, location = 0, scale = 1)), main = "Density Curve")
+  for(i in 1 : simulation){
+    original = rcauchy(n, location = 0, scale = 1)
+    fit_original = lm(formula = original ~ A) 
+    p_original[i] = summary(fit_original)$coefficients[2,4]
+    if (p_original[i] < siglevel) {
+      error_original[i] = 1 
+    }
+    transformed = INT_function(original, n, k) 
+    fit_transformed = lm(formula = transformed ~ A)
+    p_transformed[i] = summary(fit_transformed)$coefficients[2,4]
+    if (p_transformed[i] < siglevel) {
+       error_transformed[i] = 1
+    }
+  }
+  print(data.frame("TypeI Error Rate Original" = (length(which(error_original == 1)))/simulation, "TypeI Error Rate Transformed" = (length(which(error_transformed == 1)))/simulation))
+  hist(p_original, main = "Distribution of p-values for Original Data")
+  hist(p_transformed, main = "Distribution of p-values for Transformed Data")
+}
+cauchyfunc(1000, 20, 0.4, 0.05)
+```
+```{r}
+cauchyfunc(1000, 20, 0.4, 0.01)
+```
+```{r}
+cauchyfunc(1000, 20, 0.4, 0.001)
+```
+```{r}
+cauchyfunc(1000, 50, 0.4, 0.05)
+```
+```{r}
+cauchyfunc(1000, 50, 0.4, 0.01)
+```
+```{r}
+cauchyfunc(1000, 50, 0.4, 0.001)
+```
+```{r}
+cauchyfunc(1000, 100, 0.4, 0.05)
+```
+```{r}
+cauchyfunc(1000, 100, 0.4, 0.01)
+```
+```{r}
+cauchyfunc(1000, 100, 0.4, 0.001)
+```
+
+## Log Normal Distribution - the uniformity in the distribution of p values is gradually broken as sdlog increases
+### Set sdlog = 1. Try different sample sizes
+```{r}
+lognormfunc = function(simulation, n, k, siglevel) {
+  X1 = c(rep(1, n/2), rep(0, n/2))
+  X2 = c(rep(0, n/2), rep(1, n/2))
+  A = matrix(c(X1, X2), nrow = n, ncol=2)
+  p_original = vector(length = simulation)
+  error_original = NA
+  p_transformed = vector(length = simulation)
+  error_transformed = NA
+  
+  plot(density(rlnorm(n, meanlog = 0, sdlog = 1)), main = "Density Curve")
+  for(i in 1 : simulation){
+    original = rlnorm(n, meanlog = 0, sdlog = 1)
+    fit_original = lm(formula = original ~ A) 
+    p_original[i] = summary(fit_original)$coefficients[2,4]
+    if (p_original[i] < siglevel) {
+      error_original[i] = 1 
+    }
+    transformed = INT_function(original, n, k) 
+    fit_transformed = lm(formula = transformed ~ A)
+    p_transformed[i] = summary(fit_transformed)$coefficients[2,4]
+    if (p_transformed[i] < siglevel) {
+       error_transformed[i] = 1
+    }
+  }
+  print(data.frame("TypeI Error Rate Original" = (length(which(error_original == 1)))/simulation, "TypeI Error Rate Transformed" = (length(which(error_transformed == 1)))/simulation))
+  hist(p_original, main = "Distribution of p-values for Original Data")
+  hist(p_transformed, main = "Distribution of p-values for Transformed Data")
+}
+lognormfunc(1000, 20, 0.4, 0.05)
+```
+```{r}
+lognormfunc(1000, 50, 0.4, 0.05)
+```
+```{r}
+lognormfunc(1000, 100, 0.4, 0.05)
+```
+
+### Set sdlog = 2. Try different sample sizes
+```{r}
+lognormfunc = function(simulation, n, k, siglevel) {
+  X1 = c(rep(1, n/2), rep(0, n/2))
+  X2 = c(rep(0, n/2), rep(1, n/2))
+  A = matrix(c(X1, X2), nrow = n, ncol=2)
+  p_original = vector(length = simulation)
+  error_original = NA
+  p_transformed = vector(length = simulation)
+  error_transformed = NA
+  
+  plot(density(rlnorm(n, meanlog = 0, sdlog = 2)), main = "Density Curve")
+  for(i in 1 : simulation){
+    original = rlnorm(n, meanlog = 0, sdlog = 2)
+    fit_original = lm(formula = original ~ A) 
+    p_original[i] = summary(fit_original)$coefficients[2,4]
+    if (p_original[i] < siglevel) {
+      error_original[i] = 1 
+    }
+    transformed = INT_function(original, n, k) 
+    fit_transformed = lm(formula = transformed ~ A)
+    p_transformed[i] = summary(fit_transformed)$coefficients[2,4]
+    if (p_transformed[i] < siglevel) {
+       error_transformed[i] = 1
+    }
+  }
+  print(data.frame("TypeI Error Rate Original" = (length(which(error_original == 1)))/simulation, "TypeI Error Rate Transformed" = (length(which(error_transformed == 1)))/simulation))
+  hist(p_original, main = "Distribution of p-values for Original Data")
+  hist(p_transformed, main = "Distribution of p-values for Transformed Data")
+}
+lognormfunc(1000, 20, 0.4, 0.05)
+```
+```{r}
+lognormfunc(1000, 50, 0.4, 0.05)
+```
+```{r}
+lognormfunc(1000, 100, 0.4, 0.05)
+```
+
+### Set sdlog = 3. Try different sample sizes
+```{r}
+lognormfunc = function(simulation, n, k, siglevel) {
+  X1 = c(rep(1, n/2), rep(0, n/2))
+  X2 = c(rep(0, n/2), rep(1, n/2))
+  A = matrix(c(X1, X2), nrow = n, ncol=2)
+  p_original = vector(length = simulation)
+  error_original = NA
+  p_transformed = vector(length = simulation)
+  error_transformed = NA
+  
+  plot(density(rlnorm(n, meanlog = 0, sdlog = 3)), main = "Density Curve")
+  for(i in 1 : simulation){
+    original = rlnorm(n, meanlog = 0, sdlog = 3)
+    fit_original = lm(formula = original ~ A) 
+    p_original[i] = summary(fit_original)$coefficients[2,4]
+    if (p_original[i] < siglevel) {
+      error_original[i] = 1 
+    }
+    transformed = INT_function(original, n, k) 
+    fit_transformed = lm(formula = transformed ~ A)
+    p_transformed[i] = summary(fit_transformed)$coefficients[2,4]
+    if (p_transformed[i] < siglevel) {
+       error_transformed[i] = 1
+    }
+  }
+  print(data.frame("TypeI Error Rate Original" = (length(which(error_original == 1)))/simulation, "TypeI Error Rate Transformed" = (length(which(error_transformed == 1)))/simulation))
+  hist(p_original, main = "Distribution of p-values for Original Data")
+  hist(p_transformed, main = "Distribution of p-values for Transformed Data")
+}
+lognormfunc(1000, 20, 0.4, 0.05)
+```
+```{r}
+lognormfunc(1000, 50, 0.4, 0.05)
+```
+```{r}
+lognormfunc(1000, 100, 0.4, 0.05)
+```
