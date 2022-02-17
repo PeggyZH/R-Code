@@ -1,0 +1,432 @@
+---
+title: "Power Transformation"
+author: "Peiran Zhang"
+date: "1/14/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(car)
+library(VGAM)
+library(bestNormalize)
+```
+
+
+## Power Transformation
+```{r}
+original = rnorm(1000)
+powerTransform(original, family = "yjPower")
+summary(powerTransform(original, family = "yjPower"))
+transformed = yjPower(original, powerTransform(original, family = "yjPower")$lambda)
+hist(original)
+hist(transformed)
+```
+
+```{r}
+original = rexp(1000)
+powerTransform(original, family = "yjPower")
+summary(powerTransform(original, family = "yjPower"))
+transformed = yjPower(original, powerTransform(original, family = "yjPower")$lambda)
+hist(original)
+hist(transformed)
+```
+
+```{r}
+original = rchisq(1000, df = 1)
+powerTransform(original, family = "yjPower")
+summary(powerTransform(original, family = "yjPower"))
+transformed = yjPower(original, powerTransform(original, family = "yjPower")$lambda)
+hist(original)
+hist(transformed)
+```
+
+```{r}
+original = rlaplace(1000)
+transformed = yjPower(original, powerTransform(original, family = "yjPower")$lambda)
+hist(original)
+hist(transformed)
+```
+
+```{r}
+original = rrayleigh(1000)
+transformed = yjPower(original, powerTransform(original, family = "yjPower")$lambda)
+hist(original)
+hist(transformed)
+```
+
+```{r}
+original = rweibull(1000, shape = 1)
+transformed = yjPower(original, powerTransform(original, family = "yjPower")$lambda)
+hist(original)
+hist(transformed)
+```
+
+```{r}
+original = rcauchy(1000)
+transformed = yjPower(original, powerTransform(original, family = "yjPower")$lambda)
+hist(original)
+hist(transformed)
+```
+
+```{r}
+original = rlnorm(1000)
+transformed = yjPower(original, powerTransform(original, family = "yjPower")$lambda)
+hist(original)
+hist(transformed)
+```
+
+
+
+
+
+## Function for calculating type I error rate
+```{r}
+INT_function = function(x, n, k) { 
+  output = 0
+  ranks = rank(x) # return the sample ranks of the values
+  for (i in 1 : n) {
+    output[i] = probitlink((ranks[i] - k)/(n + 1 - 2*k))
+  }
+  return(output)
+}
+
+typeIerror <- function(simulation, n, siglevel, distribution, param) {
+  X1 = c(rep(1, n/2), rep(0, n/2))
+  X2 = c(rep(0, n/2), rep(1, n/2))
+  A = matrix(c(X1, X2), nrow = n, ncol=2) # construct the matrix A = [0, 0, 0 ...... 1, 1, 1]
+  p_original = vector(length = simulation) # store the p values for original data
+  error_original = NA # mark the position where type I error occurs in original data
+  p_transformed_INT = vector(length = simulation) # store the p values for INT transformed data
+  error_transformed_INT = NA # mark the position where type I error occurs in INT transformed data
+  p_transformed_power = vector(length = simulation) # store the p values for power transformed data
+  error_transformed_power = NA # mark the position where type I error occurs in power transformed data
+  
+    for(i in 1 : simulation){
+      if (distribution == "norm") {
+        mean = param[1] # input the mean of the distribution
+        sd = param[2] # input the standard deviation of the distribution
+        original = rnorm(n, mean, sd) # generate data from the desired distribution
+      }
+      if (distribution == "exp") {
+         rate = param # input rate
+         original = rexp(n, rate)
+      }
+      if (distribution == "chisq") {
+         df = param # input degree of freedom
+         original = rchisq(n, df, ncp = 0)
+      }
+      if (distribution == "laplace") {
+        location = param[1] # input location
+        scale = param[2] # input scale
+        original = rlaplace(n, location, scale)
+      }
+      if (distribution == "rayleigh") {
+        scale = param # input sclae
+        original = rrayleigh(n, scale)
+      }
+      if (distribution == "weibull") {
+        shape = param[1] # input shape
+        scale = param[2] # input scale
+        original = rweibull(n, shape, scale)
+      }
+      if (distribution == "cauchy") {
+        location = param[1] # input location
+        scale = param[2] # input scale
+        original = rcauchy(n, location, scale)
+      }
+      if (distribution == "lognorm") {
+        meanlog = param[1] # input mean on the log scale
+        sdlog = param[2] # input standard deviation on the log scale
+        original = rlnorm(n, meanlog, sdlog)
+      }
+      
+      fit_original = lm(formula = original ~ A) # perform the two sample t test using the samples generated and the given matrix A
+      p_original[i] = summary(fit_original)$coefficients[2,4] # collect the p values
+      if (p_original[i] < siglevel) {
+        error_original[i] = 1 # mark the positions of errors in order to calculate the type I error rate
+      }
+      
+      transformed_INT = INT_function(original, n, 3/8) # apply the inverse normal transformation to the original data
+      fit_transformed_INT = lm(formula = transformed_INT ~ A)
+      p_transformed_INT[i] = summary(fit_transformed_INT)$coefficients[2,4] # collect the p values
+      if (p_transformed_INT[i] < siglevel) {
+        error_transformed_INT[i] = 1 # mark the errors in testing the transformed data
+      }
+      
+      transformed_power = yeojohnson(original)$x.t # apply the Yeo-Johnson power transformation to the original data
+      fit_transformed_power = lm(formula = transformed_power ~ A) # perform the two sample t test again using the transformed data
+      p_transformed_power[i] = summary(fit_transformed_power)$coefficients[2,4] # collect the p values
+      if (p_transformed_power[i] < siglevel) {
+        error_transformed_power[i] = 1 # mark the errors in testing the transformed data
+      }
+    }
+
+
+  plot(density(original), main = "Density Curve") # plot the density curve for reference
+  table = as.table(rbind(length(which(error_original == 1))/simulation, length(which(error_transformed_INT == 1))/simulation, length(which(error_transformed_power == 1))/simulation))
+  colnames(table) = "Type I Error Rate"
+  rownames(table) = c("Original", "Transformed (INT)", "Transformed (Power)")
+  print(table)
+  hist(p_original, main = "Distribution of p-values for Original Data") # draw a histogram to display the distribution of the p values calculated from original data
+  hist(p_transformed_INT, main = "Distribution of p-values for Transformed Data (INT)") # draw a histogram to display the distribution of the p values calculated from transformed data
+  hist(p_transformed_power, main = "Distribution of p-values for Transformed Data (Power)") # draw a histogram to display the distribution of the p values calculated from transformed data
+}
+```
+
+## Normal
+```{r}
+typeIerror(10000, 6, 0.05, "norm", c(0, 1))
+```
+```{r}
+typeIerror(10000, 20, 0.05, "norm", c(0, 1))
+```
+```{r}
+typeIerror(10000, 50, 0.05, "norm", c(0, 1))
+```
+
+## Exponential
+```{r}
+typeIerror(10000, 6, 0.05, "exp", 1)
+```
+```{r}
+typeIerror(10000, 20, 0.05, "exp", 1)
+```
+```{r}
+typeIerror(10000, 50, 0.05, "exp", 1)
+```
+
+## Chi-Square
+```{r}
+typeIerror(10000, 6, 0.05, "chisq", 1)
+```
+```{r}
+typeIerror(10000, 20, 0.05, "chisq", 1)
+```
+```{r}
+typeIerror(10000, 50, 0.05, "chisq", 1)
+```
+
+## LaPlace
+```{r}
+typeIerror(10000, 6, 0.05, "laplace", c(0,1))
+```
+```{r}
+typeIerror(10000, 20, 0.05, "laplace", c(0,1))
+```
+```{r}
+typeIerror(10000, 50, 0.05, "laplace", c(0,1))
+```
+
+## Rayleigh
+```{r}
+typeIerror(10000, 6, 0.05, "rayleigh", 1)
+```
+```{r}
+typeIerror(10000, 20, 0.05, "rayleigh", 1)
+```
+```{r}
+typeIerror(10000, 50, 0.05, "rayleigh", 1)
+```
+
+## Weibull
+```{r}
+typeIerror(10000, 6, 0.05, "weibull", c(1,0.5))
+```
+```{r}
+typeIerror(10000, 20, 0.05, "weibull", c(1,0.5))
+```
+```{r}
+typeIerror(10000, 50, 0.05, "weibull", c(1,0.5))
+```
+
+## Cauchy
+```{r}
+typeIerror(10000, 6, 0.05, "cauchy", c(0, 1))
+```
+```{r}
+typeIerror(10000, 20, 0.05, "cauchy", c(0, 1))
+```
+```{r}
+typeIerror(10000, 50, 0.05, "cauchy", c(0, 1))
+```
+
+## Log-Normal
+```{r}
+typeIerror(10000, 6, 0.05, "lognorm", c(1,3))
+```
+```{r}
+typeIerror(10000, 20, 0.05, "lognorm", c(1,3))
+```
+```{r}
+typeIerror(10000, 50, 0.05, "lognorm", c(1,3))
+```
+
+
+
+
+
+## Gaussianity for t-test
+```{r}
+X1 = c(rep(1, 20/2), rep(0, 20/2))
+X2 = c(rep(0, 20/2), rep(1, 20/2))
+A = matrix(c(X1, X2), nrow = 20, ncol = 2)
+original = rnorm(20, 0, 1)
+test = t.test(original ~ A)
+2 * (1 - pnorm(abs(test$statistic)))
+2 * (1 - pt(abs(test$statistic), df = 18))
+test
+```
+
+```{r}
+X1 = c(rep(1, 20/2), rep(0, 20/2))
+X2 = c(rep(0, 20/2), rep(1, 20/2))
+A = matrix(c(X1, X2), nrow = 20, ncol = 2)
+original = rnorm(20, 0, 1)
+test = t.test(original ~ A)
+summary(lm(original ~ A))
+2 * (1 - pnorm(abs(test$statistic)))
+2 * (1 - pt(abs(test$statistic), df = 18))
+```
+
+
+## Two ways to calculate p values
+```{r}
+twoway <- function(simulation, n, siglevel, distribution, param) {
+  X1 = c(rep(1, n/2), rep(0, n/2))
+  X2 = c(rep(0, n/2), rep(1, n/2))
+  A = matrix(c(X1, X2), nrow = n, ncol=2) 
+  
+  p_original_t = vector(length = simulation) 
+  error_original_t = NA 
+  p_transformed_INT_t = vector(length = simulation) 
+  error_transformed_INT_t = NA 
+  p_transformed_power_t = vector(length = simulation) 
+  error_transformed_power_t = NA 
+  
+  p_original_norm = vector(length = simulation) 
+  error_original_norm = NA 
+  p_transformed_INT_norm = vector(length = simulation) 
+  error_transformed_INT_norm = NA 
+  p_transformed_power_norm = vector(length = simulation) 
+  error_transformed_power_norm = NA 
+  
+    for(i in 1 : simulation){
+      if (distribution == "norm") {
+        mean = param[1] # input the mean of the distribution
+        sd = param[2] # input the standard deviation of the distribution
+        original = rnorm(n, mean, sd) # generate data from the desired distribution
+      }
+      if (distribution == "exp") {
+         rate = param # input rate
+         original = rexp(n, rate)
+      }
+      if (distribution == "chisq") {
+         df = param # input degree of freedom
+         original = rchisq(n, df, ncp = 0)
+      }
+      if (distribution == "laplace") {
+        location = param[1] # input location
+        scale = param[2] # input scale
+        original = rlaplace(n, location, scale)
+      }
+      if (distribution == "rayleigh") {
+        scale = param # input sclae
+        original = rrayleigh(n, scale)
+      }
+      if (distribution == "weibull") {
+        shape = param[1] # input shape
+        scale = param[2] # input scale
+        original = rweibull(n, shape, scale)
+      }
+      if (distribution == "cauchy") {
+        location = param[1] # input location
+        scale = param[2] # input scale
+        original = rcauchy(n, location, scale)
+      }
+      if (distribution == "lognorm") {
+        meanlog = param[1] # input mean on the log scale
+        sdlog = param[2] # input standard deviation on the log scale
+        original = rlnorm(n, meanlog, sdlog)
+      }
+      
+      fit_original = lm(formula = original ~ A) 
+      p_original_t[i] = summary(fit_original)$coefficients[2,4] 
+      if (p_original_t[i] < siglevel) {
+        error_original_t[i] = 1
+      }
+      p_original_norm[i] = 2 * (1 - pnorm(abs(summary(fit_original)$coefficients[2,3])))
+      if (p_original_norm[i] < siglevel) {
+        error_original_norm[i] = 1
+      }
+      
+      transformed_INT = INT_function(original, n, 3/8) 
+      fit_transformed_INT = lm(formula = transformed_INT ~ A)
+      p_transformed_INT_t[i] = summary(fit_transformed_INT)$coefficients[2,4] 
+      if (p_transformed_INT_t[i] < siglevel) {
+        error_transformed_INT_t[i] = 1 
+      }
+      p_transformed_INT_norm[i] = 2 * (1 - pnorm(abs(summary(fit_transformed_INT)$coefficients[2,3])))
+      if (p_transformed_INT_norm[i] < siglevel) {
+        error_transformed_INT_norm[i] = 1
+      }
+      
+      transformed_power = yeojohnson(original)$x.t 
+      fit_transformed_power = lm(formula = transformed_power ~ A) 
+      p_transformed_power_t[i] = summary(fit_transformed_power)$coefficients[2,4] 
+      if (p_transformed_power_t[i] < siglevel) {
+        error_transformed_power_t[i] = 1 
+      }
+      p_transformed_power_norm[i] = 2 * (1 - pnorm(abs(summary(fit_transformed_power)$coefficients[2,3])))
+      if (p_transformed_power_norm[i] < siglevel) {
+        error_transformed_power_norm[i] = 1
+      }
+    }
+  
+  table1 = as.table(rbind(length(which(error_original_t == 1))/simulation, length(which(error_transformed_INT_t == 1))/simulation, length(which(error_transformed_power_t == 1))/simulation))
+  colnames(table1) = "Type I Error Rate (T Test)"
+  rownames(table1) = c("Original", "Transformed (INT)", "Transformed (Power)")
+  print(table1)
+  
+  table2 = as.table(rbind(length(which(error_original_norm == 1))/simulation, length(which(error_transformed_INT_norm == 1))/simulation, length(which(error_transformed_power_norm == 1))/simulation))
+  colnames(table2) = "Type I Error Rate (Gaussian Approximation)"
+  rownames(table2) = c("Original", "Transformed (INT)", "Transformed (Power)")
+  print(table2)
+}
+```
+
+```{r}
+twoway(10000, 150, 0.05, "norm", c(0,1))
+```
+
+```{r}
+twoway(10000, 150, 0.05, "exp", 1)
+```
+
+```{r}
+twoway(10000, 150, 0.05, "chisq", 1)
+```
+
+```{r}
+twoway(10000, 150, 0.05, "laplace", c(0,1))
+```
+
+```{r}
+twoway(10000, 150, 0.05, "rayleigh", 1)
+```
+
+```{r}
+twoway(10000, 150, 0.05, "weibull", c(1,0.5))
+```
+
+```{r}
+twoway(10000, 150, 0.05, "cauchy", c(0,1))
+```
+
+```{r}
+twoway(10000, 150, 0.05, "lognorm", c(0,3))
+```
