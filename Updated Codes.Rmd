@@ -1,0 +1,664 @@
+---
+title: "Updated Codes"
+author: "Peiran Zhang"
+date: "3/09/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(VGAM)
+library(perm)
+library(bestNormalize)
+library(gridExtra)
+```
+
+## Inverse Normal Transmation Function
+```{r}
+INT_function = function(x, n, k) { 
+  output = 0
+  ranks = rank(x) # return the sample ranks of the values
+  for (i in 1 : n) {
+    output[i] = probitlink((ranks[i] - k)/(n + 1 - 2*k))
+  }
+  return(output)
+}
+```
+
+## Function for calculating type I error rates and displaying the distribution of p values
+```{r}
+dpvalue <- function(simulation, n, k, siglevel, distribution, param) {
+  X1 = c(rep(1, n/2), rep(0, n/2))
+  X2 = c(rep(0, n/2), rep(1, n/2))
+  A = matrix(c(X1, X2), nrow = n, ncol=2) # construct the matrix A = [0, 0, 0 ...... 1, 1, 1]
+  p_original = vector(length = simulation) # store the p values for original data
+  error_original = NA # mark the position where type I error occurs in original data
+  p_transformed_INT = vector(length = simulation) # store the p values for INT transformed data
+  error_transformed_INT = NA # mark the position where type I error occurs in INT transformed data
+  p_transformed_power = vector(length = simulation) # store the p values for power transformed data
+  error_transformed_power = NA # mark the position where type I error occurs in power transformed data
+  
+    for(i in 1 : simulation){
+      if (distribution == "norm") {
+        mean = param[1] # input the mean of the distribution
+        sd = param[2] # input the standard deviation of the distribution
+        original = rnorm(n, mean, sd) # generate data from the desired distribution
+      }
+      if (distribution == "exp") {
+         rate = param # input rate
+         original = rexp(n, rate)
+      }
+      if (distribution == "chisq") {
+         df = param # input degree of freedom
+         original = rchisq(n, df, ncp = 0)
+      }
+      if (distribution == "laplace") {
+        location = param[1] # input location
+        scale = param[2] # input scale
+        original = rlaplace(n, location, scale)
+      }
+      if (distribution == "rayleigh") {
+        scale = param # input sclae
+        original = rrayleigh(n, scale)
+      }
+      if (distribution == "weibull") {
+        shape = param[1] # input shape
+        scale = param[2] # input scale
+        original = rweibull(n, shape, scale)
+      }
+      if (distribution == "cauchy") {
+        location = param[1] # input location
+        scale = param[2] # input scale
+        original = rcauchy(n, location, scale)
+      }
+      if (distribution == "lognorm") {
+        meanlog = param[1] # input mean on the log scale
+        sdlog = param[2] # input standard deviation on the log scale
+        original = rlnorm(n, meanlog, sdlog)
+      }
+      
+      fit_original = lm(formula = original ~ A) # perform the two sample t test using the samples generated and the given matrix A
+      p_original[i] = summary(fit_original)$coefficients[2,4] # collect the p values
+      if (p_original[i] < siglevel) {
+        error_original[i] = 1 # mark the positions of errors in order to calculate the type I error rate
+      }
+      
+      transformed_INT = INT_function(original, n, 3/8) # apply the inverse normal transformation to the original data
+      fit_transformed_INT = lm(formula = transformed_INT ~ A)
+      p_transformed_INT[i] = summary(fit_transformed_INT)$coefficients[2,4] # collect the p values
+      if (p_transformed_INT[i] < siglevel) {
+        error_transformed_INT[i] = 1 # mark the errors in testing the transformed data
+      }
+      
+      transformed_power = yeojohnson(original)$x.t # apply the Yeo-Johnson power transformation to the original data
+      fit_transformed_power = lm(formula = transformed_power ~ A) # perform the two sample t test again using the transformed data
+      p_transformed_power[i] = summary(fit_transformed_power)$coefficients[2,4] # collect the p values
+      if (p_transformed_power[i] < siglevel) {
+        error_transformed_power[i] = 1 # mark the errors in testing the transformed data
+      }
+    }
+
+
+  table = as.table(rbind(length(which(error_original == 1))/simulation, length(which(error_transformed_INT == 1))/simulation, length(which(error_transformed_power == 1))/simulation))
+  colnames(table) = "Type I Error Rate"
+  rownames(table) = c("Original", "Transformed (INT)", "Transformed (Power)")
+  print(table)
+  par(mfrow=c(2, 2), oma=c(0, 0, 2, 0))
+  plot(density(original), main = "Density Curve") # plot the density curve for reference
+  hist(p_original, main = "Original Data") # draw a histogram to display the distribution of the p values calculated from original data
+  hist(p_transformed_INT, main = "Transformed Data (INT)") # draw a histogram to display the distribution of the p values calculated from transformed data
+  hist(p_transformed_power, main = "Transformed Data (Power)") # draw a histogram to display the distribution of the p values calculated from transformed data
+  mtext(paste0("Distribution of P-Values for Distribution = ", distribution, " and n = ", n), side = 3, line = 0, outer = TRUE, cex = 1.5)
+}
+```
+
+## Function for power analysis
+```{r}
+pwanaly <- function(simulation, n, k, distribution) {
+  ttest_original = vector(length = simulation) # store the p values for t tests using original data
+  
+  # store the position where the p value is less than the significance level for t tests
+  ttest_original_005 = NA # siglevel = 0.05
+  ttest_original_001 = NA # siglevel = 0.01
+  ttest_original_0001 = NA # siglevel = 0.001
+  
+  ttest_INT = vector(length = simulation) # store the p values for t tests using data transformed by INT
+  
+  ttest_INT_005 = NA # siglevel = 0.05
+  ttest_INT_001 = NA # siglevel = 0.01
+  ttest_INT_0001 = NA # siglevel = 0.001
+  
+  ttest_power = vector(length = simulation) # store the p values for t tests using data transformed by Yeo-Johnson power transformation
+  
+  ttest_power_005 = NA # siglevel = 0.05
+  ttest_power_001 = NA # siglevel = 0.01
+  ttest_power_0001 = NA # siglevel = 0.001
+
+  ptest_original = vector(length = simulation) # store the p values for permutation tests using original data
+  
+  ptest_original_005 = NA # siglevel = 0.05
+  ptest_original_001 = NA # siglevel = 0.01
+  ptest_original_0001 = NA # siglevel = 0.001
+  
+  ptest_INT = vector(length = simulation) # store the p values for permutation tests using data transformed by INT
+  
+  ptest_INT_005 = NA # siglevel = 0.05
+  ptest_INT_001 = NA # siglevel = 0.01
+  ptest_INT_0001 = NA # siglevel = 0.001
+  
+  ptest_power = vector(length = simulation) # store the p values for permutation tests using data transformed by Yeo-Johnson power transformation
+  
+  ptest_power_005 = NA # siglevel = 0.05
+  ptest_power_001 = NA # siglevel = 0.01
+  ptest_power_0001 = NA # siglevel = 0.001
+
+  for (i in 1:simulation) { 
+    # construct two groups samples from the desired distribution
+    # there is a 0.5 difference in group means
+    if (distribution == "norm") {
+      a = rnorm(n, mean = 0, sd = 1)
+      b = rnorm(n, mean = 0.5, sd = 1)
+    }
+    if (distribution == "laplace") {
+      a = rlaplace(n, location = 0, scale = sqrt(0.5))
+      b = rlaplace(n, location = 0.5, scale = sqrt(0.5))
+    }
+    if (distribution == "chisq") {
+      a = rchisq(n, df = 1)
+      b = rchisq(n, df = 1) + 0.5
+    }
+    if (distribution == "weibull") {
+      a = rweibull(n, shape = 1, scale = 0.5)
+      b = rweibull(n, shape = 1, scale = 0.5) + 0.5
+    }
+
+    ttest_original[i] = t.test(a, b)$p.value # perform the two sample t test and collect the p values
+    
+    # mark the position where the p value is less than the significance level
+    if (ttest_original[i] < 0.05) {
+      ttest_original_005[i] = 1
+    }
+    if (ttest_original[i] < 0.01) {
+      ttest_original_001[i] = 1
+    }
+    if (ttest_original[i] < 0.001) {
+      ttest_original_0001[i] = 1
+    }
+    
+    total = c(a, b) # combine the two groups into one
+    INT = INT_function(total, 2*n, k) # perform the inverse normal transformation
+    splited_INT = split(INT, ceiling(seq_along(INT) / n))
+    newa_INT = splited_INT$`1`
+    newb_INT = splited_INT$`2` # split the transformed data back to two groups of samples along the sequence
+    
+    ttest_INT[i] = t.test(newa_INT, newb_INT)$p.value # perform the two sample t test and collect the p values
+    
+    # mark the position where the p value is less than the significance level
+    if (ttest_INT[i] < 0.05) {
+      ttest_INT_005[i] = 1
+    }
+    if (ttest_INT[i] < 0.01) {
+      ttest_INT_001[i] = 1
+    }
+    if (ttest_INT[i] < 0.001) {
+      ttest_INT_0001[i] = 1
+    }
+    
+    power = yeojohnson(total)$x.t # perform the Yeo-Johnson power transformation transformation
+    splited_power = split(power, ceiling(seq_along(power) / n))
+    newa_power = splited_power$`1`
+    newb_power = splited_power$`2` # split the transformed data back to two groups of samples along the sequence
+    
+    ttest_power[i] = t.test(newa_power, newb_power)$p.value # perform the two sample t test and collect the p values
+    
+    # mark the position where the p value is less than the significance level
+    if (ttest_power[i] < 0.05) {
+      ttest_power_005[i] = 1
+    }
+    if (ttest_power[i] < 0.01) {
+      ttest_power_001[i] = 1
+    }
+    if (ttest_power[i] < 0.001) {
+      ttest_power_0001[i] = 1
+    }
+
+  # the above process is repeated but perform the permutation test rather than the two sample t test
+    ptest_original[i] = permTS(a, b)$p.value
+    
+    if (ptest_original[i] < 0.05) {
+      ptest_original_005[i] = 1
+    }
+    if (ptest_original[i] < 0.01) {
+      ptest_original_001[i] = 1
+    }
+    if (ptest_original[i] < 0.001) {
+      ptest_original_0001[i] = 1
+    }
+    
+    ptest_INT[i] = permTS(newa_INT, newb_INT)$p.value
+    
+    if (ptest_INT[i] < 0.05) {
+      ptest_INT_005[i] = 1
+    }
+    if (ptest_INT[i] < 0.01) {
+      ptest_INT_001[i] = 1
+    }
+    if (ptest_INT[i] < 0.001) {
+      ptest_INT_0001[i] = 1
+    }
+    
+    ptest_power[i] = permTS(newa_power, newb_power)$p.value
+    
+    if (ptest_power[i] < 0.05) {
+      ptest_power_005[i] = 1
+    }
+    if (ptest_power[i] < 0.01) {
+      ptest_power_001[i] = 1
+    }
+    if (ptest_power[i] < 0.001) {
+      ptest_power_0001[i] = 1
+    }
+  }
+  
+  par(mfrow = c(2, 2))
+  # calculate the powers and form them into one data frame
+  data = (data.frame(c("Power Original 0.05" = (length(which(ttest_original_005 == 1)))/simulation, "Power Original 0.01" = (length(which(ttest_original_001 == 1)))/simulation, "Power Original 0.001" = (length(which(ttest_original_0001 == 1)))/simulation, "Power INT Transformed 0.05" = (length(which(ttest_INT_005 == 1)))/simulation, "Power INT Transformed 0.01" = (length(which(ttest_INT_001 == 1)))/simulation, "Power INT Transformed 0.001" = (length(which(ttest_INT_0001 == 1)))/simulation, "Power Power Transformed 0.05" = (length(which(ttest_power_005 == 1)))/simulation, "Power Power Transformed 0.01" = (length(which(ttest_power_001 == 1)))/simulation, "Power Power Transformed 0.001" = (length(which(ttest_power_0001 == 1)))/simulation), c("Power Original 0.05" = (length(which(ptest_original_005 == 1)))/simulation, "Power Original 0.01" = (length(which(ptest_original_001 == 1)))/simulation, "Power Original 0.001" = (length(which(ptest_original_0001 == 1)))/simulation, "Power INT  Transformed 0.05" = (length(which(ptest_INT_005 == 1)))/simulation, "Power INT Transformed 0.01" = (length(which(ptest_INT_001 == 1)))/simulation, "Power INT Transformed 0.001" = (length(which(ptest_INT_0001 == 1)))/simulation, "Power Power Transformed 0.05" = (length(which(ptest_power_005 == 1)))/simulation, "Power Power Transformed 0.01" = (length(which(ptest_power_001 == 1)))/simulation, "Power Power Transformed 0.001" = (length(which(ptest_power_0001 == 1)))/simulation)))
+  # rename the columns and categorize the results into the ones using t test and the ones using permutation test
+  colnames(data) = c("T Test", "Permutation Test")
+  # display the result
+  
+  data_005 = c((length(which(ttest_original_005 == 1)))/simulation, (length(which(ttest_INT_005 == 1)))/simulation, (length(which(ttest_power_005 == 1)))/simulation, (length(which(ptest_original_005 == 1)))/simulation, (length(which(ptest_INT_005 == 1)))/simulation, (length(which(ptest_power_005 == 1)))/simulation)
+  power_005 = matrix(data_005, nrow = 2, ncol = 3, byrow = TRUE)
+  rownames(power_005) = c("t test", "perm test")
+  barplot(power_005, main = paste0("Distribution = ", distribution, ", n = ", n, " and sig = 0.05"), xlab = "Power", col = c("cornsilk","cornsilk4"), beside = TRUE, horiz = TRUE, names.arg = c ("Original", "INT", "Yeo-Johnson"))
+  
+  data_001 = c((length(which(ttest_original_001 == 1)))/simulation, (length(which(ttest_INT_001 == 1)))/simulation, (length(which(ttest_power_001 == 1)))/simulation, (length(which(ptest_original_001 == 1)))/simulation, (length(which(ptest_INT_001 == 1)))/simulation, (length(which(ptest_power_001 == 1)))/simulation)
+  power_001 = matrix(data_001, nrow = 2, ncol = 3, byrow = TRUE)
+  rownames(power_001) = c("t test", "perm test")
+  barplot(power_001, main = paste0("Distribution = ", distribution, ", n = ", n, " and sig = 0.01"), xlab = "Power", col = c("cornsilk","cornsilk4"), beside = TRUE, horiz = TRUE, names.arg = c ("Original", "INT", "Yeo-Johnson"))
+  
+  data_0001 = c((length(which(ttest_original_0001 == 1)))/simulation, (length(which(ttest_INT_0001 == 1)))/simulation, (length(which(ttest_power_0001 == 1)))/simulation, (length(which(ptest_original_0001 == 1)))/simulation, (length(which(ptest_INT_0001 == 1)))/simulation, (length(which(ptest_power_0001 == 1)))/simulation)
+  power_0001 = matrix(data_0001, nrow = 2, ncol = 3, byrow = TRUE)
+  rownames(power_0001) = c("t test", "perm test")
+  barplot(power_0001, main = paste0("Distribution = ", distribution, ", n = ", n, " and sig = 0.001"), xlab = "Power", col = c("cornsilk","cornsilk4"), legend = rownames(power_0001), args.legend = list(x = "bottomright", bty = "n", inset=c(-0.05, 0), xpd = TRUE), beside = TRUE, horiz = TRUE, names.arg = c ("Original", "INT", "Yeo-Johnson"))
+  
+}
+```
+
+
+
+
+
+## Distribution of p values and type I error rates before and after inverse normal transformation and Yeo-Johnson power transformation (default parameters are used for most distributions)
+### Normal Distribution
+```{r}
+dpvalue(10000, 10, 3/8, 0.05, "norm", c(0,1))
+```
+```{r}
+dpvalue(10000, 20, 3/8, 0.05, "norm", c(0,1))
+```
+```{r}
+dpvalue(10000, 50, 3/8, 0.05, "norm", c(0,1))
+```
+```{r}
+dpvalue(10000, 100, 3/8, 0.05, "norm", c(0,1))
+```
+
+### Exponential Distribution
+```{r}
+dpvalue(10000, 10, 3/8, 0.05, "exp", 1)
+```
+```{r}
+dpvalue(10000, 20, 3/8, 0.05, "exp", 1)
+```
+```{r}
+dpvalue(10000, 50, 3/8, 0.05, "exp", 1)
+```
+```{r}
+dpvalue(10000, 100, 3/8, 0.05, "exp", 1)
+```
+
+### Chi Square Distribution
+```{r}
+dpvalue(10000, 10, 3/8, 0.05, "chisq", 1)
+```
+```{r}
+dpvalue(10000, 20, 3/8, 0.05, "chisq", 1)
+```
+```{r}
+dpvalue(10000, 50, 3/8, 0.05, "chisq", 1)
+```
+```{r}
+dpvalue(10000, 100, 3/8, 0.05, "chisq", 1)
+```
+
+### LaPlace Distribution
+```{r}
+dpvalue(10000, 10, 3/8, 0.05, "laplace", c(0,1))
+```
+```{r}
+dpvalue(10000, 20, 3/8, 0.05, "laplace", c(0,1))
+```
+```{r}
+dpvalue(10000, 50, 3/8, 0.05, "laplace", c(0,1))
+```
+```{r}
+dpvalue(10000, 100, 3/8, 0.05, "laplace", c(0,1))
+```
+
+### Rayleigh Distribution
+```{r}
+dpvalue(10000, 10, 3/8, 0.05, "rayleigh", 1)
+```
+```{r}
+dpvalue(10000, 20, 3/8, 0.05, "rayleigh", 1)
+```
+```{r}
+dpvalue(10000, 50, 3/8, 0.05, "rayleigh", 1)
+```
+```{r}
+dpvalue(10000, 100, 3/8, 0.05, "rayleigh", 1)
+```
+
+### Weibull Distribution
+```{r}
+dpvalue(10000, 10, 3/8, 0.05, "weibull", c(1,1))
+```
+```{r}
+dpvalue(10000, 20, 3/8, 0.05, "weibull", c(1,1))
+```
+```{r}
+dpvalue(10000, 50, 3/8, 0.05, "weibull", c(1,1))
+```
+```{r}
+dpvalue(10000, 100, 3/8, 0.05, "weibull", c(1,1))
+```
+
+### Cauchy Distribution
+```{r}
+dpvalue(10000, 10, 3/8, 0.05, "cauchy", c(0,1))
+```
+```{r}
+dpvalue(10000, 20, 3/8, 0.05, "cauchy", c(0,1))
+```
+```{r}
+dpvalue(10000, 50, 3/8, 0.05, "cauchy", c(0,1))
+```
+```{r}
+dpvalue(10000, 100, 3/8, 0.05, "cauchy", c(0,1))
+```
+
+### Log Normal Distribution (increasing the standard deviation on the log scale increases the extreme level of the data and breaks the uniformity of the distribution of p values )
+```{r}
+dpvalue(10000, 10, 3/8, 0.05, "lognorm", c(1,1))
+```
+```{r}
+dpvalue(10000, 10, 3/8, 0.05, "lognorm", c(1,2))
+```
+```{r}
+dpvalue(10000, 10, 3/8, 0.05, "lognorm", c(1,3))
+```
+```{r}
+dpvalue(10000, 10, 3/8, 0.05, "lognorm", c(1,4))
+```
+
+```{r}
+dpvalue(10000, 20, 3/8, 0.05, "lognorm", c(1,1))
+```
+```{r}
+dpvalue(10000, 20, 3/8, 0.05, "lognorm", c(1,2))
+```
+```{r}
+dpvalue(10000, 20, 3/8, 0.05, "lognorm", c(1,3))
+```
+```{r}
+dpvalue(10000, 20, 3/8, 0.05, "lognorm", c(1,4))
+```
+
+```{r}
+dpvalue(10000, 50, 3/8, 0.05, "lognorm", c(1,1))
+```
+```{r}
+dpvalue(10000, 50, 3/8, 0.05, "lognorm", c(1,2))
+```
+```{r}
+dpvalue(10000, 50, 3/8, 0.05, "lognorm", c(1,3))
+```
+```{r}
+dpvalue(10000, 50, 3/8, 0.05, "lognorm", c(1,4))
+```
+
+```{r}
+dpvalue(10000, 100, 3/8, 0.05, "lognorm", c(1,1))
+```
+```{r}
+dpvalue(10000, 100, 3/8, 0.05, "lognorm", c(1,2))
+```
+```{r}
+dpvalue(10000, 100, 3/8, 0.05, "lognorm", c(1,3))
+```
+```{r}
+dpvalue(10000, 100, 3/8, 0.05, "lognorm", c(1,4))
+```
+
+
+
+## Powere Analysis (Reproducing Table 4 in Article "Rank-Based Inverse Normal Transformations are Increasingly Used, But are They Merited?")
+
+run 10,000 from 5-30 x-axis sample size y-axis power only 0.05
+## set n = 5
+```{r}
+pwanaly(1000, 5, 3/8, "norm")
+```
+```{r}
+pwanaly(1000, 20, 3/8, "norm")
+```
+```{r}
+pwanaly(1000, 50, 3/8, "norm")
+```
+
+```{r}
+pwanaly(1000, 5, 3/8, "laplace")
+```
+```{r}
+pwanaly(1000, 20, 3/8, "laplace")
+```
+```{r}
+pwanaly(1000, 50, 3/8, "laplace")
+```
+
+```{r}
+pwanaly(1000, 5, 3/8, "chisq")
+```
+```{r}
+pwanaly(1000, 20, 3/8, "chisq")
+```
+```{r}
+pwanaly(1000, 50, 3/8, "chisq")
+```
+
+```{r}
+pwanaly(1000, 5, 3/8, "weibull")
+```
+```{r}
+pwanaly(1000, 20, 3/8, "weibull")
+```
+```{r}
+pwanaly(1000, 50, 3/8, "weibull")
+```
+
+
+
+
+
+
+## Gaussianity for t-test
+```{r}
+X1 = c(rep(1, 20/2), rep(0, 20/2))
+X2 = c(rep(0, 20/2), rep(1, 20/2))
+A = matrix(c(X1, X2), nrow = 20, ncol = 2)
+original = rnorm(20, 0, 1)
+test = t.test(original ~ A)
+2 * (1 - pnorm(abs(test$statistic)))
+2 * (1 - pt(abs(test$statistic), df = 18))
+test
+```
+
+```{r}
+X1 = c(rep(1, 20/2), rep(0, 20/2))
+X2 = c(rep(0, 20/2), rep(1, 20/2))
+A = matrix(c(X1, X2), nrow = 20, ncol = 2)
+original = rnorm(20, 0, 1)
+test = t.test(original ~ A)
+summary(lm(original ~ A))
+2 * (1 - pnorm(abs(test$statistic)))
+2 * (1 - pt(abs(test$statistic), df = 18))
+```
+
+## Two ways to calculate p values
+```{r}
+twoway <- function(simulation, n, siglevel, distribution, param) {
+  X1 = c(rep(1, n/2), rep(0, n/2))
+  X2 = c(rep(0, n/2), rep(1, n/2))
+  A = matrix(c(X1, X2), nrow = n, ncol=2) 
+  
+  p_original_t = vector(length = simulation) 
+  error_original_t = NA 
+  p_transformed_INT_t = vector(length = simulation) 
+  error_transformed_INT_t = NA 
+  p_transformed_power_t = vector(length = simulation) 
+  error_transformed_power_t = NA 
+  
+  p_original_norm = vector(length = simulation) 
+  error_original_norm = NA 
+  p_transformed_INT_norm = vector(length = simulation) 
+  error_transformed_INT_norm = NA 
+  p_transformed_power_norm = vector(length = simulation) 
+  error_transformed_power_norm = NA 
+  
+    for(i in 1 : simulation){
+      if (distribution == "norm") {
+        mean = param[1] # input the mean of the distribution
+        sd = param[2] # input the standard deviation of the distribution
+        original = rnorm(n, mean, sd) # generate data from the desired distribution
+      }
+      if (distribution == "exp") {
+         rate = param # input rate
+         original = rexp(n, rate)
+      }
+      if (distribution == "chisq") {
+         df = param # input degree of freedom
+         original = rchisq(n, df, ncp = 0)
+      }
+      if (distribution == "laplace") {
+        location = param[1] # input location
+        scale = param[2] # input scale
+        original = rlaplace(n, location, scale)
+      }
+      if (distribution == "rayleigh") {
+        scale = param # input sclae
+        original = rrayleigh(n, scale)
+      }
+      if (distribution == "weibull") {
+        shape = param[1] # input shape
+        scale = param[2] # input scale
+        original = rweibull(n, shape, scale)
+      }
+      if (distribution == "cauchy") {
+        location = param[1] # input location
+        scale = param[2] # input scale
+        original = rcauchy(n, location, scale)
+      }
+      if (distribution == "lognorm") {
+        meanlog = param[1] # input mean on the log scale
+        sdlog = param[2] # input standard deviation on the log scale
+        original = rlnorm(n, meanlog, sdlog)
+      }
+      
+      fit_original = lm(formula = original ~ A) 
+      p_original_t[i] = summary(fit_original)$coefficients[2,4] 
+      if (p_original_t[i] < siglevel) {
+        error_original_t[i] = 1
+      }
+      p_original_norm[i] = 2 * (1 - pnorm(abs(summary(fit_original)$coefficients[2,3])))
+      if (p_original_norm[i] < siglevel) {
+        error_original_norm[i] = 1
+      }
+      
+      transformed_INT = INT_function(original, n, 3/8) 
+      fit_transformed_INT = lm(formula = transformed_INT ~ A)
+      p_transformed_INT_t[i] = summary(fit_transformed_INT)$coefficients[2,4] 
+      if (p_transformed_INT_t[i] < siglevel) {
+        error_transformed_INT_t[i] = 1 
+      }
+      p_transformed_INT_norm[i] = 2 * (1 - pnorm(abs(summary(fit_transformed_INT)$coefficients[2,3])))
+      if (p_transformed_INT_norm[i] < siglevel) {
+        error_transformed_INT_norm[i] = 1
+      }
+      
+      transformed_power = yeojohnson(original)$x.t 
+      fit_transformed_power = lm(formula = transformed_power ~ A) 
+      p_transformed_power_t[i] = summary(fit_transformed_power)$coefficients[2,4] 
+      if (p_transformed_power_t[i] < siglevel) {
+        error_transformed_power_t[i] = 1 
+      }
+      p_transformed_power_norm[i] = 2 * (1 - pnorm(abs(summary(fit_transformed_power)$coefficients[2,3])))
+      if (p_transformed_power_norm[i] < siglevel) {
+        error_transformed_power_norm[i] = 1
+      }
+    }
+  
+  table1 = as.table(rbind(length(which(error_original_t == 1))/simulation, length(which(error_transformed_INT_t == 1))/simulation, length(which(error_transformed_power_t == 1))/simulation))
+  colnames(table1) = "Type I Error Rate (T Test)"
+  rownames(table1) = c("Original", "Transformed (INT)", "Transformed (Power)")
+  print(table1)
+  
+  table2 = as.table(rbind(length(which(error_original_norm == 1))/simulation, length(which(error_transformed_INT_norm == 1))/simulation, length(which(error_transformed_power_norm == 1))/simulation))
+  colnames(table2) = "Type I Error Rate (Gaussian Approximation)"
+  rownames(table2) = c("Original", "Transformed (INT)", "Transformed (Power)")
+  print(table2)
+}
+```
+
+```{r}
+twoway(10000, 150, 0.05, "norm", c(0,1))
+```
+
+```{r}
+twoway(10000, 150, 0.05, "exp", 1)
+```
+
+```{r}
+twoway(10000, 150, 0.05, "chisq", 1)
+```
+
+```{r}
+twoway(10000, 150, 0.05, "laplace", c(0,1))
+```
+
+```{r}
+twoway(10000, 150, 0.05, "rayleigh", 1)
+```
+
+```{r}
+twoway(10000, 150, 0.05, "weibull", c(1,0.5))
+```
+
+```{r}
+twoway(10000, 150, 0.05, "cauchy", c(0,1))
+```
+
+```{r}
+twoway(10000, 150, 0.05, "lognorm", c(0,3))
+```
+
+```{r}
+data = c(0.0957, 0.1114, 0.1095, 0.1013, 0.0820, 0.1008)
+power = matrix(data, nrow = 2, ncol = 3, byrow = TRUE)
+rownames(power) = c("t test", "perm test")
+barplot(power, main = "Power for Normal Distribution with n = 5 and sig = 0.05", xlab = "Power", col = c("cornsilk","cornsilk4"), xlim = c(0, 0.13), legend = rownames(power), args.legend = list(x = "topright", bty = "n", inset=c(-0.05, 0), xpd = TRUE), beside = TRUE, horiz = TRUE, names.arg = c ("Original", "INT", "Yeo-Johnson"))
+```
